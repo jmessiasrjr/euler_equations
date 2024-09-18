@@ -151,8 +151,10 @@ void MainWindow::on_problem_activated(int index)
 
 void MainWindow::on_calculate_clicked()
 {
-    int i[5], k, err;
-    double t, et, d[14];
+    int k, err;
+    double t, et;
+    std::vector<int> i(5);
+    std::vector<double> d(14);
 
     i[0] = (ui->n->toPlainText()).toInt();
     i[1] = ui->BC1->currentIndex();
@@ -179,14 +181,13 @@ void MainWindow::on_calculate_clicked()
     d[6] = (ui->x0->toPlainText()).toDouble();
     d[7] = (ui->xf->toPlainText()).toDouble();
     d[8] = (ui->pd->toPlainText()).toDouble();
-    //if( (d[7] <= x1) || (d[7] >= x2) )
     d[9] = (ui->gamma->toPlainText()).toDouble();
     d[10] = (ui->tout->toPlainText()).toDouble();
     d[11] = (ui->maxt->toPlainText()).toDouble();
     d[12] = (ui->cfl->toPlainText()).toDouble();
     d[13] = (ui->tol->toPlainText()).toDouble();
 
-    euler(d, i, &et, &t, &k, &err);
+    euler(d, i, et, t, k, err);
 
     if(i[3] == 1) ui->log->append("Roe Solver");
     else if(i[3] == 2) ui->log->append("HLL Solver");
@@ -207,5 +208,4 @@ void MainWindow::on_calculate_clicked()
     }
 
     if(err != -1) system("gnuplot gnuplot.gp && evince data.pdf");
-
 }

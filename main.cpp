@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include <QApplication>
+#include <vector>
 
 #define sign(x) ((x >= 0.) ? " " : "-" )
 
@@ -12,37 +13,36 @@ int main(int argc, char *argv[])
     return a.exec();
 }
 
-void euler(double dbl[14], int p_int[5], double *et,
-           double *t, int *j, int *err)
+void euler(const std::vector<double> &values, const std::vector<int> &parameters, double& et,
+           double& t, int& j, int& err)
 {
-    int i, erro = 0.;
+    int i;
     double time, elpst;
     struct timespec ti, tf;
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &ti);
 
-    vacuum(dbl, &erro);
+    vacuum(values, err);
 
-    (*err) = erro;
-    if(erro == -1) return;
+    if(err == -1) return;
 
-    if(p_int[4]==1) exact(dbl, p_int);
+    if(parameters.back() == 1) exact(values, parameters);
 
-    godunov(dbl, p_int, &time, &i);
+    godunov(values, parameters, time, i);
 
-    gnuplot(dbl,p_int[4]);
+    gnuplot(values,parameters[4]);
 
     clock_gettime(CLOCK_MONOTONIC_RAW, &tf);
 
     elpst = (tf.tv_sec - ti.tv_sec) +
             (tf.tv_nsec - ti.tv_nsec) / 1e9;
 
-    (*j) = i;
-    (*t) = time;
-    (*et) = elpst;
+    j = i;
+    t = time;
+    et = elpst;
 }
 
-void gammas(double *g, double gamma)
+void gammas(std::vector<double>& g, const double gamma)
 {
     g[0] = (gamma - 1.)/(2.*gamma);
     g[1] = (gamma + 1.)/(2.*gamma);
@@ -54,64 +54,66 @@ void gammas(double *g, double gamma)
     g[7] = gamma - 1.;
 }
 
-void vacuum(double *dbl, int *err)
+void vacuum(const std::vector<double>& values, int& err)
 {
     double gamma, rhol, ul, pl, rhor, ur, pr, al, ar;
 
-    rhol = dbl[0];
-    ul = dbl[1];
-    pl = dbl[2];
-    rhor = dbl[3];
-    ur = dbl[4];
-    pr = dbl[5];
-    gamma = dbl[9];
+    rhol = values[0];
+    ul = values[1];
+    pl = values[2];
+    rhor = values[3];
+    ur = values[4];
+    pr = values[5];
+    gamma = values[9];
 
     al = sqrt(gamma*pl/rhol);
     ar = sqrt(gamma*pr/rhor);
 
     if((2./(gamma - 1.))*(al + ar) <= (ur - ul))
     {
-        (*err) = -1;
+        err = -1;
         return;
     }
+
+    err = 0;
 }
 
-void exact(double *dbl, int *p_int)
+void exact(const std::vector<double> &values, const std::vector<int> &parameters)
 {
-    int i, n;
-    double X, RHO, U, P, E, rho, u, p, dx, xi, xf, PD, gamma, TOUT,
-           S, e, x[10*p_int[0]], g[8], var[6], star[4];
+    double X, RHO, U, P, E, rho, u, p, dx, xi, xf, PD, gamma, TOUT, S, e;
     FILE *exato;
 
     exato = fopen("exact.out","w");
 
-    n = p_int[0];
+    const int n = parameters[0];
 
-    xi = dbl[6];
-    xf = dbl[7];
-    PD = dbl[8];
-    gamma = dbl[9];
-    TOUT = dbl[10];
+    std::vector<double> var(6), g(8), star(5), x(10*n);
 
-    var[0] = dbl[0];
-    var[1] = dbl[1];
-    var[2] = dbl[2];
-    var[3] = dbl[3];
-    var[4] = dbl[4];
-    var[5] = dbl[5];
+    xi = values[6];
+    xf = values[7];
+    PD = values[8];
+    gamma = values[9];
+    TOUT = values[10];
+
+    var[0] = values[0];
+    var[1] = values[1];
+    var[2] = values[2];
+    var[3] = values[3];
+    var[4] = values[4];
+    var[5] = values[5];
 
     gammas(g, gamma);
 
-    exactRP(var, star, g, dbl);
+    exactRP(var, star, g, values);
 
     dx = (xf - xi)/(10*n);
 
-    for(i = 0;i < (10*n);i++)
+    for(int i = 0;i < (10*n);i++)
     {
         x[i] = xi + (i + 0.5)*dx;
         S = ( x[i] - PD )/TOUT;
 
-        sample(var, star, g, dbl, S);
+        sample(var, star, g, values, S);
 
         X = x[i] - (int)x[i];
         fprintf(exato,"%s%d.%06d  ",sign(x[i]), abs((int)x[i]), abs((int)(1e6*X)));
@@ -132,50 +134,62 @@ void exact(double *dbl, int *p_int)
 
 }
 
-void godunov(double *dbl, int *p_int, double *t, int *j)
+void godunov(const std::vector<double>& values, const std::vector<int>& parameters, double &t, int &j)
 {
-    int i, n, method;
-    double X, RHO, U, P, E, rho, u, p, x, dx, xi, xf, gamma, TOUT, MAXT,
-           e, dt, time = 0., CS[p_int[0]+2][3], F[p_int[0]+2][3],
-           W[p_int[0]+2][3];
+    int i;
+    double X, RHO, U, P, E, rho, u, p, x, dx, e, dt, time = 0.;
     FILE *saida;
 
     saida = fopen("result.out","w");
 
-    n = p_int[0] + 2;
-    method = p_int[3];
+    const int &n        = parameters[0] + 2;
+    const int &method   = parameters[3];
 
-    xi = dbl[6];
-    xf = dbl[7];
-    gamma = dbl[9];
-    TOUT = dbl[10];
-    MAXT = dbl[11];
+    const double &xi    = values[6];
+    const double &xf    = values[7];
+    const double &gamma = values[9];
+    const double &TOUT  = values[10];
+    const double &MAXT  = values[11];
 
     dx = (xf - xi)/(n-2);
 
-    CI(W, CS, dbl, p_int);
+    std::vector<std::vector<double>> W(n, std::vector<double>(3)),
+            CS(n, std::vector<double>(3)), F(n, std::vector<double>(3));
 
-    for(i=0;i<MAXT;i++)
+    CI(W, CS, values, parameters);
+
+    for(i=0; i<MAXT; i++)
     {
-        boundary(W, p_int);
-        dt = cfl(W, dbl, time, p_int, i);
+        boundary(W, parameters);
+        dt = cfl(W, values, parameters, time, i);
 
-        if(method == 1) roe(W, F, CS, dbl, dt/dx, p_int);
-        else if(method == 2) HLL(W, F, CS, dbl, p_int);
-        else if(method == 3) HLLC(W, F, CS, dbl, p_int);
-        else if(method == 4) Rusanov(W, F, CS, dbl, p_int);
-        else godRP(W, F, dbl, p_int);
+        switch(method)
+        {
+            case(1): roe(W, F, CS, values, parameters, dt/dx);
+            break;
 
-        update(W, CS, F, dt/dx, dbl, p_int);
+            case(2): HLL(W, F, CS, values, parameters);
+            break;
+
+            case(3): HLLC(W, F, CS, values, parameters);
+            break;
+
+            case(4): Rusanov(W, F, CS, values, parameters);
+            break;
+
+            default: godRP(W, F, values, parameters);
+        }
+
+        update(W, F, CS, values, parameters, dt/dx);
 
         time += dt;
         if(fabs(time -TOUT) < 1e-6) break;
     }
 
-    (*j) = i;
-    (*t) = time;
+    j = i;
+    t = time;
 
-    for(i=1;i<(n-1);i++)
+    for(i=1; i<(n-1); i++)
     {
         rho = W[i][0]; RHO = rho - (int)rho;
         u = W[i][1]; U = u - (int)u;
@@ -193,31 +207,29 @@ void godunov(double *dbl, int *p_int, double *t, int *j)
     }
 
     fclose(saida);
-
 }
 
-void CI(double W[][3], double CS[][3], double *dbl,
-        int *p_int)
+void CI(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+        const std::vector<int> &parameters)
 {
-    int i, n;
-    double x, dx, rhol, ul, pl, rhor, ur, pr, xi, xf, PD, gamma;
+    double x, dx;
 
-    n = p_int[0] + 2;
+    const int n = parameters[0] + 2;
 
-    rhol = dbl[0];
-    ul = dbl[1];
-    pl = dbl[2];
-    rhor = dbl[3];
-    ur = dbl[4];
-    pr = dbl[5];
-    xi = dbl[6];
-    xf = dbl[7];
-    PD = dbl[8];
-    gamma = dbl[9];
+    const double &rhol  = values[0];
+    const double &ul    = values[1];
+    const double &pl    = values[2];
+    const double &rhor  = values[3];
+    const double &ur    = values[4];
+    const double &pr    = values[5];
+    const double &xi    = values[6];
+    const double &xf    = values[7];
+    const double &PD    = values[8];
+    const double &gamma = values[9];
 
     dx = (xf - xi)/(n-2);
 
-    for(i=1;i<(n-1);i++)
+    for(int i=1; i<(n-1); i++)
     {
         x = xi + (i-.5)*dx;
         if(x < PD)
@@ -241,13 +253,11 @@ void CI(double W[][3], double CS[][3], double *dbl,
 
 }
 
-void boundary(double W[][3], int *p_int)
+void boundary(std::vector<std::vector<double>> &W, const std::vector<int> &parameters)
 {
-    int n, BCL, BCR;
-
-    n = p_int[0] + 2;
-    BCL = p_int[1];
-    BCR = p_int[2];
+    const int &n   = parameters[0] + 2;
+    const int &BCL = parameters[1];
+    const int &BCR = parameters[2];
 
     if(BCL == 0) //transmissive
     {
@@ -274,24 +284,22 @@ void boundary(double W[][3], int *p_int)
         W[n-1][1] = -W[n-2][1];
         W[n-1][2] = W[n-2][2];
     }
-
 }
 
-double cfl(double W[][3], double *dbl, double time,
-           int *p_int, int m)
+double cfl(const std::vector<std::vector<double>> &W, const std::vector<double> &values,
+           const std::vector<int> &parameters, const double time, const int m)
 {
-    int i, n;
     double a, rho, u, p, xi, xf, gamma, TOUT, CFL, dx, dt, S, Smax = 0.;
 
-    n = p_int[0] + 2;
+    const int n = parameters[0] + 2;
 
-    xi = dbl[6];
-    xf = dbl[7];
-    gamma = dbl[9];
-    TOUT = dbl[10];
-    CFL = dbl[12];
+    xi = values[6];
+    xf = values[7];
+    gamma = values[9];
+    TOUT = values[10];
+    CFL = values[12];
 
-    for(i=0;i<n;i++)
+    for(int i=0;i<n;i++)
     {
         rho = W[i][0];
         u = W[i][1];
@@ -311,19 +319,17 @@ double cfl(double W[][3], double *dbl, double time,
 
 }
 
-void godRP(double W[][3], double F[][3], double *dbl,
-           int *p_int)
+void godRP(std::vector<std::vector<double> > &W, std::vector<std::vector<double> > &F,
+           const std::vector<double> &values, const std::vector<int> &parameters)
 {
-    int i, n;
-    double gamma, var[6], g[8], star[4];
+    const int n = parameters[0] + 2;
+    const double gamma = values[9];
 
-    n = p_int[0] + 2;
-
-    gamma = dbl[9];
+    std::vector<double> var(6), g(8), star(5);
 
     gammas(g, gamma);
 
-    for(i=0;i<(n-1);i++)
+    for(int i=0; i<(n-1); i++)
     {
         var[0] = W[i][0];
         var[1] = W[i][1];
@@ -332,31 +338,31 @@ void godRP(double W[][3], double F[][3], double *dbl,
         var[4] = W[i+1][1];
         var[5] = W[i+1][2];
 
-        exactRP(var, star, g, dbl);
+        exactRP(var, star, g, values);
 
-        sample(var, star, g, dbl, 0.);
+        sample(var, star, g, values, 0.);
 
-        flux(F, var, dbl, i);
-
+        flux(F, var, values, i);
     }
 
 }
 
-void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
-        double dtdx, int *p_int)
+void roe(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F, std::vector<std::vector<double>> &CS,
+         const std::vector<double> &values, const std::vector<int> &parameters, double dtdx)
 {
-    int i, j, n;
-    double gamma, rhol, ul, pl, el, hl, rhor, ur, pr, er, hr,
+    double rhol, ul, pl, el, hl, rhor, ur, pr, er, hr,
            al, ar, rm, rhom, um, hm, am, u_star, a_star, ak,
-           sig, cflm, Sml, Smr, Snew, Tolson, K[3],
-           star[5], FD[p_int[0]+2][3];
+           sig, cflm, Sml, Smr, Snew;
 
-    n = p_int[0] + 2;
-    Tolson = 0.1;
+    const int n      = parameters[0] + 2;
+    const int Tolson = 0.1;
 
-    gamma = dbl[9];
+    std::vector<double> K(3), star(5);
+    std::vector<std::vector<double>> FD(n, std::vector<double>(3));
 
-    for(i=0;i<n;i++)
+    const double &gamma = values[9];
+
+    for(int i=0; i<n; i++)
     {
         if( i==0 || i==(n-1) )
         {
@@ -370,7 +376,7 @@ void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
         FD[i][2] = W[i][1]*( CS[i][2] + W[i][2] );
     }
 
-    for(i=0;i<(n-1);i++)
+    for(int i=0; i<(n-1); i++)
     {
         rhol = W[i][0];
         ul = W[i][1];
@@ -431,14 +437,14 @@ void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
                 K[1] = um - am;
                 K[2] = hm - um*am;
 
-                for(j=0;j<3;j++)
+                for(int j=0; j<3; j++)
                 {
                     F[i][j] = FD[i][j] + Snew*ak*K[j];
                 }
             }
             else
             {
-                for(j=0;j<3;j++)
+                for(int j=0; j<3; j++)
                 {
                     F[i][j] = FD[i][j];
                 }
@@ -475,14 +481,14 @@ void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
                 K[1] = um + am;
                 K[2] = hm + um*am;
 
-                for(j=0;j<3;j++)
+                for(int j=0; j<3; j++)
                 {
                     F[i][j] = FD[i+1][j] - Snew*ak*K[j];
                 }
             }
             else
             {
-                for(j=0;j<3;j++)
+                for(int j=0; j<3; j++)
                 {
                     F[i][j] = FD[i+1][j];
                 }
@@ -493,8 +499,8 @@ void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
     }
 }
 
-void starvals(double *star, double gamma, double rhok, double uk,
-              double ek, double ak, double sig)
+void starvals(std::vector<double> &star, const double gamma, const double rhok, const double uk,
+              const double ek, const double ak, const double sig)
 {
     double um, hm, am, rho_star, p_star;
 
@@ -511,20 +517,20 @@ void starvals(double *star, double gamma, double rhok, double uk,
 
 }
 
-void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int)
+void HLL(std::vector<std::vector<double> > &W, std::vector<std::vector<double> > &F, std::vector<std::vector<double> > &CS,
+         const std::vector<double> &values, const std::vector<int> &parameters)
 {
-    int i, j, n;
-    double gamma, rhol, ul, pl, rhor, ur, pr, al, ar, pm, um,
-           Sl, Sr, HLLF, g[8], FD[p_int[0]+2][3], var[6];
+    double rhol, ul, pl, rhor, ur, pr, al, ar, pm, um, Sl, Sr, HLLF;
 
-    n = p_int[0] + 2;
+    const int n = parameters[0] + 2;
+    const double gamma = values[9];
 
-    gamma = dbl[9];
+    std::vector<double> g(8), var(6);
+    std::vector<std::vector<double>> FD(n, std::vector<double>(3));
 
     gammas(g, gamma);
 
-    for(i=0;i<n;i++)
+    for(int i=0; i<n; i++)
     {
         if( i==0 || i==(n-1) )
         {
@@ -537,7 +543,7 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
         FD[i][1] = CS[i][1]*W[i][1] + W[i][2];
         FD[i][2] = W[i][1]*( CS[i][2] + W[i][2] );
     }
-    for(i=0;i<(n-1);i++)
+    for(int i=0; i<(n-1); i++)
     {
         rhol = W[i][0];
         ul = W[i][1];
@@ -557,7 +563,7 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
         ar = sqrt(gamma*pr/rhor);
 
 //      Obtain p_* and u_*
-        guessp(var, dbl, g, &pm, &um);
+        guessp(var, values, g, pm, um);
 
 //      Estimate speeds S_L and S_R  Toro et al.
         if(pm <= pl)
@@ -573,7 +579,7 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
 //      Calculate HLL intercell flux
         if(Sl >= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i][j]; //F_L
             }
@@ -581,7 +587,7 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
 
         if( (Sl <= 0.) && (Sr >= 0.) )
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 HLLF = Sr*FD[i][j] - Sl*FD[i+1][j] +
                        Sl*Sr*(CS[i+1][j] - CS[i][j]);
@@ -591,7 +597,7 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
 
         if(Sr <= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i+1][j]; //F_R
             }
@@ -601,20 +607,21 @@ void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
 
 }
 
-void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int)
+void HLLC(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+          std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+          const std::vector<int> &parameters)
 {
-    int i, j, n;
-    double gamma, rhol, ul, pl, rhor, ur, pr, al, ar, pm, um,
-           Sl, Sr, Sm, e, CSK[3], g[8], FD[p_int[0]+2][3], var[6];
+    double rhol, ul, pl, rhor, ur, pr, al, ar, pm, um, Sl, Sr, Sm, e;
 
-    n = p_int[0] + 2;
+    const int n = parameters[0] + 2;
+    const double gamma = values[9];
 
-    gamma = dbl[9];
+    std::vector<double> CSK(3), g(8), var(6);
+    std::vector<std::vector<double>> FD(n, std::vector<double>(3));
 
     gammas(g, gamma);
 
-    for(i=0;i<n;i++)
+    for(int i=0; i<n; i++)
     {
         if( i==0 || i==(n-1) )
         {
@@ -627,7 +634,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
         FD[i][1] = CS[i][1]*W[i][1] + W[i][2];
         FD[i][2] = W[i][1]*( CS[i][2] + W[i][2] );
     }
-    for(i=0;i<(n-1);i++)
+    for(int i=0; i<(n-1); i++)
     {
         rhol = W[i][0];
         ul = W[i][1];
@@ -647,7 +654,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
         ar = sqrt(gamma*pr/rhor);
 
 //      Obtain p_* and u_*
-        guessp(var, dbl, g, &pm, &um);
+        guessp(var, values, g, pm, um);
 
 //      Estimate speeds S_L and S_R  Toro et al.
         if(pm <= pl)
@@ -665,7 +672,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
 //      Calculate HLLC intercell flux
         if(Sl >= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i][j]; //F_L
             }
@@ -683,7 +690,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
                 CSK[1] = CSK[0]*Sm;
                 CSK[2] = CSK[0]*e;
 
-                for(j=0;j<3;j++)
+                for(int j=0;j<3;j++)
                 {
                     F[i][j] = FD[i][j] + Sl*(CSK[j] - CS[i][j]);  // F_{*L}
                 }
@@ -697,7 +704,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
                 CSK[1] = CSK[0]*Sm;
                 CSK[2] = CSK[0]*e;
 
-                for(j=0;j<3;j++)
+                for(int j=0; j<3; j++)
                 {
                     F[i][j] = FD[i+1][j] + Sr*(CSK[j] - CS[i+1][j]);  // F_{*R}
                 }
@@ -706,7 +713,7 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
 
         if(Sr <= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i+1][j]; //F_R
             }
@@ -716,20 +723,21 @@ void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
 
 }
 
-void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int)
+void Rusanov(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+             std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+             const std::vector<int> &parameters)
 {
-    int i, j, n;
-    double gamma, rhol, ul, pl, rhor, ur, pr, al, ar, pm, um,
-           Sl, Sr, Splus, RusF, g[8], FD[p_int[0]+2][3], var[6];
+    double rhol, ul, pl, rhor, ur, pr, al, ar, pm, um, Sl, Sr, Splus, RusF;
 
-    n = p_int[0] + 2;
+    const int n = parameters[0] + 2;
+    const double gamma = values[9];
 
-    gamma = dbl[9];
+    std::vector<double> g(8), var(6);
+    std::vector<std::vector<double>> FD(n, std::vector<double>(3));
 
     gammas(g, gamma);
 
-    for(i=0;i<n;i++)
+    for(int i=0; i<n; i++)
     {
         if( i==0 || i==(n-1) )
         {
@@ -742,7 +750,7 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
         FD[i][1] = CS[i][1]*W[i][1] + W[i][2];
         FD[i][2] = W[i][1]*( CS[i][2] + W[i][2] );
     }
-    for(i=0;i<(n-1);i++)
+    for(int i=0; i<(n-1); i++)
     {
         rhol = W[i][0];
         ul = W[i][1];
@@ -761,7 +769,7 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
         ar = sqrt(gamma*pr/rhor);
 
 //      Obtain p_* and u_*
-        guessp(var, dbl, g, &pm, &um);
+        guessp(var, values, g, pm, um);
 
 //      Estimate speeds S_L and S_R  Toro et al.
         if(pm <= pl)
@@ -777,7 +785,7 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
 //      Calculate Rusanov intercell flux
         if(Sl >= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i][j]; //F_L
             }
@@ -787,7 +795,7 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
 
         if( (Sl <= 0.) && (Sr >= 0.) )
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 RusF = 0.5*(FD[i][j] + FD[i+1][j]);
                 F[i][j] = RusF + 0.5*Splus*(CS[i][j] - CS[i+1][j]); // F_{RUS}
@@ -796,7 +804,7 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
 
         if(Sr <= 0.)
         {
-            for(j=0;j<3;j++)
+            for(int j=0; j<3; j++)
             {
                 F[i][j] = FD[i+1][j]; //F_R
             }
@@ -806,58 +814,51 @@ void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
 
 }
 
-void update(double W[][3], double CS[][3], double F[][3],
-            double dtdx, double *dbl, int *p_int)
+void update(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+            std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+            const std::vector<int> &parameters, double dtdx)
 {
-    int i, j, n;
-    double gamma;
+    const int n = parameters[0] + 2;
+    const double gamma = values[9];
 
-    n = p_int[0] + 2;
-
-    gamma = dbl[9];
-
-    for(i=1;i<(n-1);i++)
+    for(int i=1; i<(n-1); i++)
     {
-        for(j=0;j<3;j++)
+        for(int j=0; j<3; j++)
         {
             CS[i][j] = CS[i][j] + dtdx*( F[i-1][j] - F[i][j] );
         }
         W[i][0] = CS[i][0];
         W[i][1] = CS[i][1]/W[i][0];
         W[i][2] = (gamma - 1.)*( CS[i][2] - 0.5*CS[i][1]*W[i][1] );
-
     }
-
 }
 
-void exactRP(double *var, double *star, double *g,
-             double *dbl)
+void exactRP(const std::vector<double> &var, std::vector<double> &star,
+             const std::vector<double> &g, const std::vector<double> &values)
 {
-
-    star_pu(star, var, dbl, g);
-    rhostar(star, var, g);
-
+    star_pu(var, star, g, values);
+    rhostar(var, star, g);
 }
 
-void star_pu(double *star, double *var, double *dbl, double *g)
+void star_pu(const std::vector<double> &var, std::vector<double> &star,
+             const std::vector<double> &g, const std::vector<double> &values)
 {
-    int i;
     double change, ul, ur, fL, dfL, fR, dfR, tol, p_start, p_old, um;
 
     ul = var[1];
     ur = var[4];
-    tol = dbl[13];
+    tol = values[13];
 
-    guessp(var, dbl, g, &p_start, &um);
+    guessp(var, values, g, p_start, um);
 
     p_old = p_start;
 
-    for(i = 0;i < 20;i++)
+    for(int i=0; i < 20; i++)
     {
-        fL = f(var, dbl, g, p_old, 0);
-        dfL = df(var, dbl, g, p_old, 0);
-        fR = f(var, dbl, g, p_old, 1);
-        dfR = df(var, dbl, g, p_old, 1);
+        fL = f(var, values, g, p_old, 0);
+        dfL = df(var, values, g, p_old, 0);
+        fR = f(var, values, g, p_old, 1);
+        dfR = df(var, values, g, p_old, 1);
         p_start = p_old - (fL + fR + ur - ul)/(dfL + dfR);
         change = 2.*fabs( (p_start - p_old)/(p_start + p_old) );
 
@@ -869,11 +870,10 @@ void star_pu(double *star, double *var, double *dbl, double *g)
             "insuficientes\n");
     star[0] = p_start;
     star[1] = 0.5*( ur + ul + fR - fL );
-
 }
 
 // Solve /rho_L^* e /rho_R^*
-void rhostar(double *star, double *var, double *g)
+void rhostar(const std::vector<double> &var, std::vector<double> &star, const std::vector<double> &g)
 {
     double rhol, pl, rhor, pr, pm, pmL, pmR;
 
@@ -903,8 +903,8 @@ void rhostar(double *star, double *var, double *g)
 
 }
 
-void guessp(double *var, double *dbl, double *g, double *pm,
-            double *um)
+void guessp(const std::vector<double> &var, const std::vector<double> &values,
+            const std::vector<double> &g, double &pm, double &um)
 {
     double gamma, rhol, ul, pl, rhor, ur, pr, aL, aR,
            aup, ppv, p_min, p_max, qmax, pq, ptL, ptR,
@@ -916,7 +916,7 @@ void guessp(double *var, double *dbl, double *g, double *pm,
     rhor = var[3];
     ur = var[4];
     pr = var[5];
-    gamma = dbl[9];
+    gamma = values[9];
 
     aL = sqrt(gamma*pl/rhol);
     aR = sqrt(gamma*pr/rhor);
@@ -932,8 +932,8 @@ void guessp(double *var, double *dbl, double *g, double *pm,
     if( (qmax <= quser) && ((p_min <= ppv) && (ppv <= p_max)) )
     {
 //      Select PVRS Riemann solver
-        (*pm) = ppv;
-        (*um) = 0.5*(ul + ur) + 0.5*(pl - pr)/aup;
+        pm = ppv;
+        um = 0.5*(ul + ur) + 0.5*(pl - pr)/aup;
     }
     else
     {
@@ -941,36 +941,37 @@ void guessp(double *var, double *dbl, double *g, double *pm,
         {
 //          Select Two-Rarefaction Riemann solver
             pq = pow( (pl/pr), g[0] );
-            (*um) = (pq*ul/aL + ur/aR + g[3]*(pq - 1.))/(pq/aL + 1./aR);
-            ptL = 1. + g[6]*(ul - (*um))/aL;
-            ptR = 1. + g[6]*((*um) - ur)/aR;
-            (*pm) = 0.5*(pl*pow(ptL, g[2]) + pr*pow(ptR, g[2]));
+            um = (pq*ul/aL + ur/aR + g[3]*(pq - 1.))/(pq/aL + 1./aR);
+            ptL = 1. + g[6]*(ul - um)/aL;
+            ptR = 1. + g[6]*(um - ur)/aR;
+            pm = 0.5*(pl*pow(ptL, g[2]) + pr*pow(ptR, g[2]));
         }
         else
         {
 //          Select Two-Shock Riemann solver with PVRS as estimate
             geL = sqrt((g[4]/rhol)/(g[5]*pl + ppv));
             geR = sqrt((g[4]/rhor)/(g[5]*pr + ppv));
-            (*pm) = (geL*pl + geR*pr - (ur - ul))/(geL + geR);
-            (*um) = 0.5*(ul + ur) + 0.5*(geR*((*pm) - pr) -
-                    geL*((*pm) - pl));
+            pm = (geL*pl + geR*pr - (ur - ul))/(geL + geR);
+            um = 0.5*(ul + ur) + 0.5*(geR*(pm - pr) -
+                    geL*(pm - pl));
         }
     }
 
 }
 
-double f(double *var, double *dbl, double *g, double p_old, int i)
+double f(const std::vector<double> &var, const std::vector<double> &values,
+         const std::vector<double> &g, const double p_old, const int i)
 {
-    double gamma, a, p, rho, A, B;
+    double A, B;
 
-    gamma = dbl[9];
-    p = var[2 + 3*i];
-    rho = var[0 + 3*i];
+    const double gamma = values[9];
+    const double p     = var[2 + 3*i];
+    const double rho   = var[0 + 3*i];
 
-    a = sqrt(gamma*p/rho);
+    const double a = sqrt(gamma*p/rho);
 
     if(p_old < p)
-    return( g[3]*a*( pow((p_old/p), g[0]) - 1. ) );
+        return( g[3]*a*( pow((p_old/p), g[0]) - 1. ) );
     else
     {
         A = g[4]/rho;
@@ -979,18 +980,19 @@ double f(double *var, double *dbl, double *g, double p_old, int i)
     }
 }
 
-double df(double *var, double *dbl, double *g, double p_old, int i)
+double df(const std::vector<double> &var, const std::vector<double> &values,
+          const std::vector<double> &g, const double p_old, const int i)
 {
-    double gamma, a, p, rho, A, B;
+    double A, B;
 
-    gamma = dbl[9];
-    p = var[2 + 3*i];
-    rho = var[0 + 3*i];
+    const double gamma = values[9];
+    const double p     = var[2 + 3*i];
+    const double rho   = var[0 + 3*i];
 
-    a = sqrt(gamma*p/rho);
+    const double a = sqrt(gamma*p/rho);
 
     if(p_old < p)
-    return( (1./(a*rho))*pow((p_old/p), -g[1]) );
+        return( (1./(a*rho))*pow((p_old/p), -g[1]) );
     else
     {
         A = g[4]/rho;
@@ -1000,7 +1002,8 @@ double df(double *var, double *dbl, double *g, double p_old, int i)
     }
 }
 
-void flux(double F[][3], double *var, double *dbl, int m)
+void flux(std::vector<std::vector<double>> &F, const std::vector<double> &var,
+          const std::vector<double> &values, const int m)
 {
     double gamma, rho, u, p, e;
 
@@ -1008,7 +1011,7 @@ void flux(double F[][3], double *var, double *dbl, int m)
     u = var[1];
     p = var[2];
 
-    gamma = dbl[9];
+    gamma = values[9];
 
     F[m][0] = rho*u;
     F[m][1] = rho*u*u + p;
@@ -1017,8 +1020,8 @@ void flux(double F[][3], double *var, double *dbl, int m)
 
 }
 
-void sample(double *var, double *star, double *g,
-            double *dbl, double S)
+void sample(std::vector<double> &var, std::vector<double> &star,
+            const std::vector<double> &g, const std::vector<double> &values, const double S)
 {
     double rho, u, p, rhol, ul, pl, rhor, ur, pr, pm, um,
            rholm, rhorm, a, aL, aR, gamma, SHL, STL, SHR, STR,
@@ -1030,7 +1033,7 @@ void sample(double *var, double *star, double *g,
     rhor = var[3];
     ur = var[4];
     pr = var[5];
-    gamma = dbl[9];
+    gamma = values[9];
 
     pm = star[0];
     um = star[1];
@@ -1159,13 +1162,12 @@ void sample(double *var, double *star, double *g,
 
 }
 
-void gnuplot(double *dbl, int ex)
+void gnuplot(const std::vector<double> &values, const int ex)
 {
-    double xi, xf;
     FILE *plot;
 
-    xi = dbl[6];
-    xf = dbl[7];
+    const double xi = values[6];
+    const double xf = values[7];
 
     plot = fopen("gnuplot.gp","w");
 

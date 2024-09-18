@@ -5,51 +5,62 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <vector>
 
 /*
-void euler(double rhol, double ul, double pl, 
-	   double rhor, double ur, double pr, 
+void euler(double rhol, double ul, double pl,
+       double rhor, double ur, double pr,
            double L, double PD, double gamma,
            double TOUT, double MAXT, double CFL,
            double tol, int n, int BC1, int BC2,
-	   int method);
+       int method);
 */
-void euler(double dbl[14], int p_int[5], double *et,
-           double *t, int *j, int *err);
-void gammas(double *g, double gamma);
-void vacuum(double *dbl, int *err);
-void exact(double *dbl, int *p_int);
-void godunov(double *dbl, int *p_int, double *t, int *j);
-void CI(double W[][3], double CS[][3], double *dbl,
-        int *p_int);
-void boundary(double W[][3], int *p_int);
-double cfl(double W[][3], double *dbl, double time,
-           int *p_int, int m);
-void godRP(double W[][3], double F[][3], double *dbl,
-           int *p_int);
-void roe(double W[][3], double F[][3], double CS[][3], double *dbl,
-        double dtdx, int *p_int);
-void starvals(double *star, double gamma, double rhok, double uk,
-              double ek, double ak, double sig);
-void HLL(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int);
-void HLLC(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int);
-void Rusanov(double W[][3], double F[][3], double CS[][3], double *dbl,
-         int *p_int);
-void update(double W[][3], double CS[][3], double F[][3],
-            double dtdx, double *dbl, int *p_int);
-void exactRP(double *var, double *star, double *g,
-             double *dbl);
-void star_pu(double *star, double *var, double *dbl, double *g);
-void rhostar(double *star, double *var, double *g);
-void guessp(double *var, double *dbl, double *g, double *pm,
-            double *um);
-double f(double *var, double *dbl, double *g, double p_old, int i);
-double df(double *var, double *dbl, double *g, double p_old, int i);
-void flux(double F[][3], double *var, double *dbl, int m);
-void sample(double *var, double *star, double *g,
-            double *dbl, double S);
-void gnuplot(double *dbl, int ex);
+void euler(const std::vector<double> &values, const std::vector<int> &parameters, double &et,
+        double &t, int &j, int &err);
+void gammas(std::vector<double> &g, const double gamma);
+void vacuum(const std::vector<double> &values, int &err);
+void exact(const std::vector<double> &values, const std::vector<int> &parameters);
+void godunov(const std::vector<double> &values, const std::vector<int> &parameters, double &t, int &j);
+void CI(std::vector<std::vector<double> > &W, std::vector<std::vector<double> > &CS,
+        const std::vector<double> &values, const std::vector<int> &parameters);
+void boundary(std::vector<std::vector<double>> &W, const std::vector<int> &parameters);
+double cfl(const std::vector<std::vector<double>> &W, const std::vector<double> &values,
+           const std::vector<int> &parameters, const double time, const int m);
+void godRP(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+           const std::vector<double> &values, const std::vector<int> &parameters);
+void roe(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+         std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+         const std::vector<int> &parameters, double dtdx);
+void starvals(std::vector<double> &star, const double gamma, const double rhok,
+              const double uk, const double ek, const double ak, const double sig);
+void HLL(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+         std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+         const std::vector<int> &parameters);
+void HLLC(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+          std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+          const std::vector<int> &parameters);
+void Rusanov(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+             std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+             const std::vector<int> &parameters);
+void update(std::vector<std::vector<double>> &W, std::vector<std::vector<double>> &F,
+            std::vector<std::vector<double>> &CS, const std::vector<double> &values,
+            const std::vector<int> &parameters, double dtdx);
+void exactRP(const std::vector<double> &var, std::vector<double> &star,
+             const std::vector<double> &g, const std::vector<double> &values);
+void star_pu(const std::vector<double> &var, std::vector<double> &star,
+              const std::vector<double> &g, const std::vector<double> &values);
+void rhostar(const std::vector<double> &var, std::vector<double> &star,
+             const std::vector<double> &g);
+void guessp(const std::vector<double> &var, const std::vector<double> &values,
+            const std::vector<double> &g, double &pm, double &um);
+double f(const std::vector<double> &var, const std::vector<double> &values,
+         const std::vector<double> &g, const double p_old, const int i);
+double df(const std::vector<double> &var, const std::vector<double> &values,
+          const std::vector<double> &g, double p_old, int i);
+void flux(std::vector<std::vector<double>> &F, const std::vector<double> &var,
+          const std::vector<double> &values, const int m);
+void sample(std::vector<double> &var, std::vector<double> &star,
+            const std::vector<double> &g, const std::vector<double> &values, const double S);
+void gnuplot(const std::vector<double> &values, const int ex);
 
 #endif /* EULER_H_ */
